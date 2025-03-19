@@ -25,7 +25,7 @@ generation_config = {
 }
 
 model = genai.GenerativeModel(
-    model_name="gemini-2.0-flash-lite",
+    model_name="gemini-2.0-flash",
     generation_config=generation_config
 )
 
@@ -107,12 +107,12 @@ if user_input:
             relevant_chunks = [all_chunks[i] for i in indices[0]]
             context = "\n\n".join(relevant_chunks)
             
-            # Buat pesan dengan instruksi sistem dan konteks data
+            # Buat pesan dengan instruksi dan konteks data, lalu gabungkan dengan pertanyaan
             instructions = "Gunakan data berikut untuk menganalisis dan menjawab pertanyaan mengenai review pelanggan:\n\n"
             message_text = f"{instructions}{context}\n\nPertanyaan: {user_input}"
             
-            # Mulai sesi chat dengan model Gemini dengan role 'system'
-            chat_session = model.start_chat(history=[{"role": "system", "parts": [{"text": message_text}]}])
+            # Mulai sesi chat dengan model Gemini menggunakan role 'user'
+            chat_session = model.start_chat(history=[{"role": "user", "parts": [{"text": message_text}]}])
             response = chat_session.send_message(user_input)
             
             if response and response.text:
