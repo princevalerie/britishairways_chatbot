@@ -86,7 +86,7 @@ if "messages" not in st.session_state:
     st.session_state["messages"] = [{"role": "assistant", "content": "Halo, ada yang bisa saya bantu?"}]
 
 # Add a button to clear messages
-if st.button("Clear Messages"):
+if st.sidebar.button("Clear Messages"):
     st.session_state["messages"] = [{"role": "assistant", "content": "Halo, ada yang bisa saya bantu?"}]
 
 # Tampilkan history chat
