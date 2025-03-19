@@ -7,28 +7,6 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 import faiss
 
-# Sidebar: Input API key untuk Gemini
-api_key = st.sidebar.text_input("Gemini API Key", type="password", placeholder="Masukkan API key Anda")
-if not api_key:
-    st.sidebar.error("API key tidak ditemukan. Silakan masukkan GEMINI_API_KEY.")
-    st.stop()
-else:
-    genai.configure(api_key=api_key)
-
-# Konfigurasi model Gemini
-generation_config = {
-    "temperature": 0.2,
-    "top_p": 0.95,
-    "top_k": 40,
-    "max_output_tokens": 8192,
-    "response_mime_type": "text/plain",
-}
-
-model = genai.GenerativeModel(
-    model_name="gemini-2.0-flash-lite",
-    generation_config=generation_config
-)
-
 # Inisialisasi model embedding (SentenceTransformer)
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 
@@ -79,47 +57,69 @@ embedding_dim = chunk_embeddings.shape[1]
 index = faiss.IndexFlatIP(embedding_dim)
 index.add(chunk_embeddings)
 
-# UI Chatbot
-st.title("Customer Review Analysis Chatbot with RAG (Embedding + FAISS)")
+# Sidebar: Input API key untuk Gemini
+api_key = st.sidebar.text_input("Gemini API Key", type="password", placeholder="Masukkan API key Anda")
 
-if "messages" not in st.session_state:
-    st.session_state["messages"] = [{"role": "assistant", "content": "Halo, ada yang bisa saya bantu?"}]
+# Jika API key sudah ada, konfigurasi model Gemini dan tampilkan UI Chatbot
+if api_key:
+    genai.configure(api_key=api_key)
 
-# Add a button to clear messages
-if st.sidebar.button("Clear Messages"):
-    st.session_state["messages"] = [{"role": "assistant", "content": "Halo, ada yang bisa saya bantu?"}]
+    # Konfigurasi model Gemini
+    generation_config = {
+        "temperature": 0.2,
+        "top_p": 0.95,
+        "top_k": 40,
+        "max_output_tokens": 8192,
+        "response_mime_type": "text/plain",
+    }
 
-# Tampilkan history chat
-for msg in st.session_state["messages"]:
-    st.chat_message(msg["role"]).write(msg["content"])
+    model = genai.GenerativeModel(
+        model_name="gemini-2.0-flash-lite",
+        generation_config=generation_config
+    )
 
-# Input chat menggunakan st.chat_input
-user_input = st.chat_input("Tulis pertanyaan Anda di sini...")
-if user_input:
-    st.session_state["messages"].append({"role": "user", "content": user_input})
-    st.chat_message("user").write(user_input)
-    
-    with st.chat_message("assistant"):
-        with st.spinner("Mencari informasi yang relevan..."):
-            # Hitung embedding untuk query pengguna dan normalisasi
-            query_embedding = embedding_model.encode([user_input], convert_to_numpy=True)
-            faiss.normalize_L2(query_embedding)
-            
-            # Lakukan pencarian FAISS untuk menemukan top 3 chunk yang relevan
-            k = 3
-            distances, indices = index.search(query_embedding, k)
-            relevant_chunks = [all_chunks[i] for i in indices[0]]
-            context = "\n\n".join(relevant_chunks)
-            
-            # Buat pesan dengan instruksi dan konteks data, lalu gabungkan dengan pertanyaan
-            instructions = "Gunakan data berikut untuk menganalisis dan menjawab pertanyaan mengenai review pelanggan:\n\n"
-            message_text = f"{instructions}{context}\n\nPertanyaan: {user_input}"
-            
-            # Mulai sesi chat dengan model Gemini menggunakan role 'user'
-            chat_session = model.start_chat(history=[{"role": "user", "parts": [{"text": message_text}]}])
-            response = chat_session.send_message(user_input)
-            
-            if response and response.text:
-                st.write("### Jawaban:")
-                st.markdown(response.text)
-                st.session_state["messages"].append({"role": "assistant", "content": response.text})
+    st.title("Customer Review Analysis Chatbot with RAG (Embedding + FAISS)")
+
+    if "messages" not in st.session_state:
+        st.session_state["messages"] = [{"role": "assistant", "content": "Halo, ada yang bisa saya bantu?"}]
+
+    # Tombol untuk menghapus history chat
+    if st.sidebar.button("Clear Messages"):
+        st.session_state["messages"] = [{"role": "assistant", "content": "Halo, ada yang bisa saya bantu?"}]
+
+    # Tampilkan history chat
+    for msg in st.session_state["messages"]:
+        st.chat_message(msg["role"]).write(msg["content"])
+
+    # Input chat menggunakan st.chat_input
+    user_input = st.chat_input("Tulis pertanyaan Anda di sini...")
+    if user_input:
+        st.session_state["messages"].append({"role": "user", "content": user_input})
+        st.chat_message("user").write(user_input)
+        
+        with st.chat_message("assistant"):
+            with st.spinner("Mencari informasi yang relevan..."):
+                # Hitung embedding untuk query pengguna dan normalisasi
+                query_embedding = embedding_model.encode([user_input], convert_to_numpy=True)
+                faiss.normalize_L2(query_embedding)
+                
+                # Lakukan pencarian FAISS untuk menemukan top 3 chunk yang relevan
+                k = 3
+                distances, indices = index.search(query_embedding, k)
+                relevant_chunks = [all_chunks[i] for i in indices[0]]
+                context = "\n\n".join(relevant_chunks)
+                
+                # Buat pesan dengan instruksi dan konteks data, lalu gabungkan dengan pertanyaan
+                instructions = "Gunakan data berikut untuk menganalisis dan menjawab pertanyaan mengenai review pelanggan:\n\n"
+                message_text = f"{instructions}{context}\n\nPertanyaan: {user_input}"
+                
+                # Mulai sesi chat dengan model Gemini menggunakan role 'user'
+                chat_session = model.start_chat(history=[{"role": "user", "parts": [{"text": message_text}]}])
+                response = chat_session.send_message(user_input)
+                
+                if response and response.text:
+                    st.write("### Jawaban:")
+                    st.markdown(response.text)
+                    st.session_state["messages"].append({"role": "assistant", "content": response.text})
+else:
+    st.sidebar.error("API key tidak ditemukan. Silakan masukkan GEMINI_API_KEY untuk mengakses fitur chat.")
