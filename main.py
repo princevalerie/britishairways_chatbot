@@ -46,7 +46,7 @@ def scrape_text(url):
         return ""
 
 # Fungsi untuk melakukan chunking teks
-def chunk_text(text, chunk_size=1000):
+def chunk_text(text, chunk_size=20000000):
     return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
 
 # Daftar URL yang akan di-scrape
