@@ -29,6 +29,9 @@ def scrape_text(url):
 def chunk_text(text, chunk_size=1000):
     return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
 
+# Inisialisasi model embedding (SentenceTransformer)
+embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+
 # Daftar URL yang akan di-scrape
 urls = [
     "https://www.airlinequality.com/airline-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000",
@@ -38,12 +41,12 @@ urls = [
 
 # Scraping data dan memproses chunk
 all_chunks = []
-st.info("Sedang melakukan scraping dan memproses data, mohon tunggu...")
-for url in urls:
-    full_text = scrape_text(url)
-    if full_text:
-        chunks = chunk_text(full_text, chunk_size=1000)
-        all_chunks.extend(chunks)
+with st.spinner("Sedang melakukan scraping dan memproses data, mohon tunggu..."):
+    for url in urls:
+        full_text = scrape_text(url)
+        if full_text:
+            chunks = chunk_text(full_text, chunk_size=1000)
+            all_chunks.extend(chunks)
 
 # Precompute embedding untuk setiap chunk dan normalisasi (untuk cosine similarity)
 @st.cache_data(show_spinner=False)
@@ -58,6 +61,10 @@ chunk_embeddings = compute_embeddings(all_chunks)
 embedding_dim = chunk_embeddings.shape[1]
 index = faiss.IndexFlatIP(embedding_dim)
 index.add(chunk_embeddings)
+
+# Setelah proses selesai, lanjutkan dengan komponen UI lainnya
+st.sidebar.success("Proses scraping dan pemrosesan data selesai.")
+
 
 # Periksa apakah api_key dan chunk_embeddings sudah siap
 if api_key and chunk_embeddings is not None:
