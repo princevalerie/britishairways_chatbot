@@ -82,7 +82,7 @@ if api_key and chunk_embeddings is not None:
         generation_config=generation_config
     )
 
-    st.title("Customer Review Analysis Chatbot with RAG (Embedding + FAISS)")
+    st.title("Customer Review Analysis Chatbot with RAG ")
 
     if "messages" not in st.session_state:
         st.session_state["messages"] = [{"role": "assistant", "content": "Halo, ada yang bisa saya bantu?"}]
