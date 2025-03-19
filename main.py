@@ -1,4 +1,3 @@
-import os
 import streamlit as st
 import google.generativeai as genai
 import requests
@@ -6,6 +5,9 @@ from bs4 import BeautifulSoup
 import numpy as np
 from sentence_transformers import SentenceTransformer
 import faiss
+
+# Sidebar: Input API key untuk Gemini
+api_key = st.sidebar.text_input("Gemini API Key", type="password", placeholder="Masukkan API key Anda")
 
 # Inisialisasi model embedding (SentenceTransformer)
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -57,14 +59,10 @@ embedding_dim = chunk_embeddings.shape[1]
 index = faiss.IndexFlatIP(embedding_dim)
 index.add(chunk_embeddings)
 
-# Sidebar: Input API key untuk Gemini
-api_key = st.sidebar.text_input("Gemini API Key", type="password", placeholder="Masukkan API key Anda")
-
-# Jika API key sudah ada, konfigurasi model Gemini dan tampilkan UI Chatbot
-if api_key:
-    genai.configure(api_key=api_key)
-
+# Periksa apakah api_key dan chunk_embeddings sudah siap
+if api_key and chunk_embeddings is not None:
     # Konfigurasi model Gemini
+    genai.configure(api_key=api_key)
     generation_config = {
         "temperature": 0.2,
         "top_p": 0.95,
@@ -72,7 +70,6 @@ if api_key:
         "max_output_tokens": 8192,
         "response_mime_type": "text/plain",
     }
-
     model = genai.GenerativeModel(
         model_name="gemini-2.0-flash-lite",
         generation_config=generation_config
@@ -104,7 +101,7 @@ if api_key:
                 faiss.normalize_L2(query_embedding)
                 
                 # Lakukan pencarian FAISS untuk menemukan top 3 chunk yang relevan
-                k = 3
+                k = 100
                 distances, indices = index.search(query_embedding, k)
                 relevant_chunks = [all_chunks[i] for i in indices[0]]
                 context = "\n\n".join(relevant_chunks)
@@ -122,4 +119,4 @@ if api_key:
                     st.markdown(response.text)
                     st.session_state["messages"].append({"role": "assistant", "content": response.text})
 else:
-    st.sidebar.error("API key tidak ditemukan. Silakan masukkan GEMINI_API_KEY untuk mengakses fitur chat.")
+    st.sidebar.warning("Mohon masukkan API key dan pastikan embeddings siap untuk mengakses fitur chat.")
