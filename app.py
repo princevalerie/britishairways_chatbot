@@ -24,17 +24,22 @@ class Config:
 
 class FireCrawlManager:
     def __init__(self):
-        self.app = FirecrawlApp(api_key=os.getenv("FIRECRAWL_API_KEY"))
+        api_key = os.getenv("FIRECRAWL_API_KEY")
+        if not api_key:
+            st.error("FireCrawl API Key tidak ditemukan. Mohon input API key di sidebar.")
+            st.stop()
+        self.app = FirecrawlApp(api_key=api_key)
     
     def crawl_reviews(self, url: str) -> List[Dict]:
         try:
+            # Updated parameters to match the v1 API format
             crawl_result = self.app.crawl_url(
                 url,
                 params={
                     'limit': 5,
                     'scrapeOptions': {
                         'formats': ['markdown'],
-                        'extractorOptions': {
+                        'selectors': {  # Changed from extractorOptions to selectors
                             'reviews': {
                                 'selector': '.review-list .review-article',
                                 'type': 'list',
@@ -70,6 +75,10 @@ class FireCrawlManager:
         
         except Exception as e:
             st.error(f"FireCrawl error: {str(e)}")
+            # Sleep to handle rate limits
+            if "429" in str(e) or "rate limit" in str(e).lower():
+                st.warning("Rate limit exceeded. Waiting 60 seconds before retrying...")
+                time.sleep(60)
             return []
 
     def _process_review(self, review: Dict, url: str) -> Dict:
@@ -147,16 +156,12 @@ Format Jawaban:
         
         return self.llm.invoke(prompt).content
 
-# Fungsi untuk reload aplikasi
-def reload_app():
-    st.session_state.clear()
-    st.rerun()  # Changed from st.experimental_rerun() to st.rerun()
-
 # Komponen UI
 def setup_sidebar():
     with st.sidebar:
         st.title("⚙️ Konfigurasi")
         st.write("Pastikan API key sudah diisi di file .env atau melalui input berikut.")
+        
         # Input API Key
         firecrawl_key = st.text_input("FireCrawl API Key", value=os.getenv("FIRECRAWL_API_KEY") or "", type="password")
         gemini_key = st.text_input("Gemini API Key", value=os.getenv("GEMINI_API_KEY") or "", type="password")
@@ -168,7 +173,10 @@ def setup_sidebar():
             os.environ["GEMINI_API_KEY"] = gemini_key
         
         # Tombol untuk me-reload aplikasi
-        st.button("🔄 Muat Ulang Data", on_click=reload_app)
+        if st.button("🔄 Muat Ulang Data"):
+            # Set flag in session state instead of using callback
+            st.session_state.reload_requested = True
+            st.info("Memuat ulang data. Mohon tunggu...")
 
 def display_analytics(reviews: List[Dict]):
     st.subheader("📊 Analisis Data")
@@ -192,6 +200,11 @@ def main():
     setup_sidebar()
     st.title("✈️ British Airways Review AI Analyst")
     
+    # Check if reload was requested
+    if 'reload_requested' in st.session_state and st.session_state.reload_requested:
+        st.session_state.clear()
+        st.session_state.reload_requested = False
+    
     if 'reviews' not in st.session_state:
         st.session_state.reviews = []
     
@@ -204,18 +217,31 @@ def main():
                 "https://www.airlinequality.com/lounge-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000"
             ]
             
+            total_reviews = []
             for url in urls:
                 st.write(f"Memproses: {url}")
-                st.session_state.reviews.extend(crawler.crawl_reviews(url))
-                time.sleep(2)
-            st.success("✅ Crawling selesai")
+                reviews = crawler.crawl_reviews(url)
+                total_reviews.extend(reviews)
+                # Add delay between requests to avoid rate limits
+                time.sleep(5)
+            
+            if total_reviews:
+                st.session_state.reviews = total_reviews
+                st.success(f"✅ Crawling selesai. Berhasil mengambil {len(total_reviews)} review.")
+            else:
+                st.error("Tidak ada review yang berhasil diambil.")
     
     if st.session_state.reviews:
         display_analytics(st.session_state.reviews)
         
-        rag = RAGSystem()
-        vector_store = rag.init_vector_store(st.session_state.reviews)
-        assistant = AnalystAssistant(vector_store)
+        # Only initialize RAG system if there are reviews to process
+        if not st.session_state.get('vector_store_initialized', False):
+            with st.spinner("🔎 Inisialisasi sistem RAG..."):
+                rag = RAGSystem()
+                st.session_state.vector_store = rag.init_vector_store(st.session_state.reviews)
+                st.session_state.vector_store_initialized = True
+        
+        assistant = AnalystAssistant(st.session_state.vector_store)
         
         st.subheader("💬 Tanya Analis AI")
         if prompt := st.chat_input("Apa yang ingin Anda analisis?"):
@@ -223,7 +249,7 @@ def main():
                 response = assistant.analyze_reviews(prompt)
                 st.write(response)
     else:
-        st.error("Gagal memuat data review")
+        st.warning("Belum ada data review. Mohon cek API key dan koneksi internet Anda.")
 
 if __name__ == "__main__":
     main()
