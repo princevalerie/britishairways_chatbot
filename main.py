@@ -81,7 +81,6 @@ st.sidebar.write("Total chunk yang dihasilkan: 5475")
 
 # UI Chatbot
 st.title("Customer Review Analysis Chatbot with RAG")
-st.write("Tanyakan apapun tentang British Airways berdasarkan analisis review pelanggan.")
 
 # Inisialisasi history pesan
 if "messages" not in st.session_state:
