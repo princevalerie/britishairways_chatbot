@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 import time
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings  # Fixed import
-from langchain_community.vectorstores import FAISS 
+from langchain_community.vectorstores import FAISS  # Fixed import
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
