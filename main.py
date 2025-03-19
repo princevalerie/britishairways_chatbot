@@ -62,7 +62,7 @@ st.info("Sedang melakukan scraping dan memproses data, mohon tunggu...")
 for url in urls:
     full_text = scrape_text(url)
     if full_text:
-        chunks = chunk_text(full_text, chunk_size=1000)
+        chunks = chunk_text(full_text, chunk_size=20000000)
         all_chunks.extend(chunks)
 
 # Precompute embedding untuk setiap chunk dan normalisasi (untuk cosine similarity)
