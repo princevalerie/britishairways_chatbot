@@ -46,7 +46,7 @@ def scrape_text(url):
         return ""
 
 # Fungsi untuk melakukan chunking teks
-def chunk_text(text, chunk_size=20000000):
+def chunk_text(text, chunk_size=1000):
     return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
 
 # Daftar URL yang akan di-scrape
@@ -62,7 +62,7 @@ st.info("Sedang melakukan scraping dan memproses data, mohon tunggu...")
 for url in urls:
     full_text = scrape_text(url)
     if full_text:
-        chunks = chunk_text(full_text, chunk_size=20000000)
+        chunks = chunk_text(full_text, chunk_size=1000)
         all_chunks.extend(chunks)
 
 # Precompute embedding untuk setiap chunk dan normalisasi (untuk cosine similarity)
