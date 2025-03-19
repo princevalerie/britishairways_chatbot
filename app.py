@@ -11,7 +11,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 
-# Konfigurasi
+# Konfigurasi awal
 load_dotenv()
 st.set_page_config(page_title="BA Reviews AI Analyst", page_icon="✈️", layout="wide")
 
@@ -147,27 +147,34 @@ Format Jawaban:
         
         return self.llm.invoke(prompt).content
 
-# UI Components
+# Fungsi untuk reload aplikasi
+def reload_app():
+    st.session_state.clear()
+    st.experimental_rerun()
+
+# Komponen UI
 def setup_sidebar():
     with st.sidebar:
         st.title("⚙️ Konfigurasi")
-        st.write("Pastikan API key sudah diisi di file .env")
-        st.markdown("""
-**Key Requirements:**
-- [FireCrawl API Key](https://firecrawl.dev)
-- [Gemini API Key](https://ai.google.dev)
-""")
+        st.write("Pastikan API key sudah diisi di file .env atau melalui input berikut.")
+        # Input API Key
+        firecrawl_key = st.text_input("FireCrawl API Key", value=os.getenv("FIRECRAWL_API_KEY") or "", type="password")
+        gemini_key = st.text_input("Gemini API Key", value=os.getenv("GEMINI_API_KEY") or "", type="password")
         
-        if st.button("🔄 Muat Ulang Data"):
-            st.session_state.clear()
-            st.experimental_rerun()
+        # Update API key ke environment variables jika diinput
+        if firecrawl_key:
+            os.environ["FIRECRAWL_API_KEY"] = firecrawl_key
+        if gemini_key:
+            os.environ["GEMINI_API_KEY"] = gemini_key
+        
+        # Tombol untuk me-reload aplikasi
+        st.button("🔄 Muat Ulang Data", on_click=reload_app)
 
 def display_analytics(reviews: List[Dict]):
     st.subheader("📊 Analisis Data")
     
     col1, col2 = st.columns(2)
     with col1:
-        # Ekstrak rating angka dari format "X/10"
         ratings = []
         for r in reviews:
             rating_str = r['rating'].split('/')[0]
@@ -181,7 +188,6 @@ def display_analytics(reviews: List[Dict]):
         unique_types, counts = np.unique(review_types, return_counts=True)
         st.write("Distribusi Jenis Review:", dict(zip(unique_types, counts)))
 
-# Main App
 def main():
     setup_sidebar()
     st.title("✈️ British Airways Review AI Analyst")
