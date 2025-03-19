@@ -1,338 +1,468 @@
 import os
-import time
-from typing import List, Dict
-
 import streamlit as st
+import google.generativeai as genai
+from dotenv import load_dotenv
 import requests
 from bs4 import BeautifulSoup
-from dotenv import load_dotenv
+import time
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_google_genai import GoogleGenerativeAIEmbeddings  # Fixed import
+from langchain_community.vectorstores import FAISS  # Fixed import
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import FAISS
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
 
-# Konfigurasi awal
+# Load environment variables from .env file
 load_dotenv()
+
+# Set up the page
 st.set_page_config(page_title="British Airways Reviews Analysis", page_icon="✈️", layout="wide")
 
-class Config:
-    """Kelas untuk menyimpan konfigurasi aplikasi"""
-    GEMINI_MODEL = "gemini-2.0-flash-lite"
-    EMBEDDING_MODEL = "models/embedding-001"
-    SCRAPE_DELAY = 1
-    CHUNK_SIZE = 1000
-    CHUNK_OVERLAP = 200
-    SEARCH_KWARGS = {"k": 5}
+# Initialize session state for API keys
+if "gemini_api_key" not in st.session_state:
+    st.session_state.gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+    
+if "firecrawl_api_key" not in st.session_state:
+    st.session_state.firecrawl_api_key = os.getenv("FIRECRAWL_API_KEY", "")
 
-class APIManager:
-    """Mengelola API keys dan konfigurasi"""
-    def __init__(self):
-        self._init_session_state()
+# Sidebar for API key input
+with st.sidebar:
+    st.title("API Keys")
+    
+    # Gemini API Key
+    gemini_api_key = st.text_input(
+        "Gemini API Key", 
+        value=st.session_state.gemini_api_key,
+        type="password",
+        help="Enter your Gemini API key"
+    )
+    
+    # FireCrawl API Key
+    firecrawl_api_key = st.text_input(
+        "FireCrawl API Key", 
+        value=st.session_state.firecrawl_api_key,
+        type="password",
+        help="Enter your FireCrawl API key"
+    )
+    
+    # Save API keys button
+    if st.button("Save API Keys"):
+        st.session_state.gemini_api_key = gemini_api_key
+        st.session_state.firecrawl_api_key = firecrawl_api_key
+        st.success("API keys saved!")
         
-    def _init_session_state(self):
-        session_defaults = {
-            "gemini_api_key": os.getenv("GEMINI_API_KEY", ""),
-            "firecrawl_api_key": os.getenv("FIRECRAWL_API_KEY", ""),
-            "initialized": False,
-            "scraped_content": [],
-            "vector_store": None,
-            "chat_history": []
-        }
-        
-        for key, value in session_defaults.items():
-            if key not in st.session_state:
-                st.session_state[key] = value
+        # Reset initialization to force re-scraping with new keys
+        if "initialized" in st.session_state:
+            st.session_state.initialized = False
+            st.rerun()  # Updated from experimental_rerun to rerun
+    
+    st.markdown("---")
+    
+    st.title("About")
+    st.write("This app analyzes British Airways customer reviews using Retrieval-Augmented Generation (RAG) and Google's Gemini AI.")
+    
+    st.header("Data Sources")
+    st.markdown("""
+    - [Airline Reviews](https://www.airlinequality.com/airline-reviews/british-airways/)
+    - [Seat Reviews](https://www.airlinequality.com/seat-reviews/british-airways/)
+    - [Lounge Reviews](https://www.airlinequality.com/lounge-reviews/british-airways/)
+    """)
+    
+    st.header("How it works")
+    st.write("""
+    1. The app scrapes reviews from the websites
+    2. Detects and extracts all available data fields
+    3. Chunks the text and creates embeddings
+    4. Stores them in a vector database
+    5. Retrieves relevant context for your questions
+    6. Uses Gemini AI to generate insights
+    """)
 
-    @property
-    def headers(self):
-        return {
-            'Authorization': f'Bearer {st.session_state.firecrawl_api_key}',
+# Validate API keys
+api_key = st.session_state.gemini_api_key
+firecrawl_api_key = st.session_state.firecrawl_api_key
+
+if not api_key:
+    st.error("Gemini API key is required. Please enter it in the sidebar.")
+    st.stop()
+
+# Configure Gemini API
+genai.configure(api_key=api_key)
+
+# Function to scrape data using FireCrawl
+def scrape_with_firecrawl(url):
+    try:
+        headers = {
+            'Authorization': f'Bearer {firecrawl_api_key}',
             'Content-Type': 'application/json'
         }
-
-class DataScraper:
-    """Handles data scraping from multiple sources"""
-    def __init__(self, api_manager: APIManager):
-        self.api_manager = api_manager
         
-    def _process_html(self, html: str, review_type: str) -> Dict:
-        """Memproses HTML review menjadi dictionary terstruktur dengan deteksi field dinamis"""
-        soup = BeautifulSoup(html, 'html.parser')
-        review_data = {'type': review_type}
+        # FireCrawl API endpoint
+        firecrawl_url = "https://api.firecrawl.dev/scrape"
         
-        # Ambil semua elemen dengan class yang mungkin berisi data
-        all_elements = soup.select('[class]')
-        
-        # Iterasi semua elemen dan ekstrak data
-        for element in all_elements:
-            # Periksa apakah elemen memiliki teks
-            if element.text and element.text.strip():
-                # Gunakan class sebagai key, atau text pertama jika tidak ada class spesifik
-                for class_name in element.get('class', []):
-                    # Hindari class yang terlalu generik
-                    if class_name not in ['item', 'review-list', 'text']:
-                        # Bersihkan teks
-                        text_content = element.text.strip()
-                        
-                        # Cek apakah ini adalah teks yang bermakna
-                        if len(text_content) > 1:  # Minimal 2 karakter untuk menghindari simbol
-                            field_name = class_name.replace('-', '_')
-                            review_data[field_name] = text_content
-        
-        # Tambahkan elemen khusus yang mungkin penting
-        # Rating
-        rating_element = soup.select_one('.rating-10 .rating, .rating')
-        if rating_element:
-            review_data['rating'] = rating_element.text.strip()
-        
-        # Review text - ini biasanya konten utama
-        text_content = soup.select_one('.text_content')
-        if text_content:
-            review_data['review_text'] = text_content.text.strip()
-            
-        # Rekomendasi
-        recommend = soup.select_one('.recommend-yes, .recommend-no')
-        if recommend:
-            review_data['recommendation'] = recommend.text.strip()
-        
-        # Tambahkan full text untuk pencarian
-        review_data['full_text'] = soup.get_text(separator=' ', strip=True)
-        
-        # Tambahkan deteksi field dengan parsing label
-        for label in soup.select('strong, b, .label'):
-            label_text = label.text.strip().lower()
-            if label_text and ':' in label_text:
-                # Ini mungkin label field
-                field_name = label_text.split(':')[0].strip().replace(' ', '_')
-                next_element = label.next_sibling
-                if next_element and isinstance(next_element, str) and next_element.strip():
-                    review_data[field_name] = next_element.strip()
-        
-        return review_data
-
-    def scrape_with_firecrawl(self, url: str) -> List[Dict]:
-        """Menggunakan FireCrawl API untuk scraping"""
-        try:
-            payload = {
-                "url": url,
-                "selectors": {
-                    "reviews": {
-                        "selector": ".review-list .item",
-                        "type": "list",
-                        "properties": {"full_html": {"selector": ".", "type": "html"}}
+        # More flexible approach - let FireCrawl extract all content from review items
+        payload = {
+            "url": url,
+            "selectors": {
+                "reviews": {
+                    "selector": ".review-list .item",
+                    "type": "list",
+                    "properties": {
+                        "full_html": {
+                            "selector": ".",
+                            "type": "html"
+                        }
                     }
                 }
             }
-            
-            response = requests.post(
-                "https://api.firecrawl.dev/scrape",
-                headers=self.api_manager.headers,
-                json=payload
-            )
-            response.raise_for_status()
-            
-            return [
-                self._process_html(review['full_html'], self._get_review_type(url))
-                for review in response.json().get('reviews', [])
-            ]
-        except Exception as e:
-            st.warning(f"FireCrawl error: {str(e)}")
-            return []
+        }
+        
+        response = requests.post(firecrawl_url, headers=headers, json=payload)
+        response.raise_for_status()
+        
+        result = response.json()
+        reviews = result.get('reviews', [])
+        
+        # Determine review type based on URL
+        review_type = "unknown"
+        if 'airline-reviews' in url:
+            review_type = 'airline'
+        elif 'seat-reviews' in url:
+            review_type = 'seat'
+        elif 'lounge-reviews' in url:
+            review_type = 'lounge'
+        
+        # Process reviews to extract details from HTML
+        processed_reviews = []
+        for review in reviews:
+            if 'full_html' in review:
+                soup = BeautifulSoup(review['full_html'], 'html.parser')
+                processed_review = {'type': review_type}
+                
+                # Extract text content
+                processed_review['full_text'] = soup.get_text(separator=' ', strip=True)
+                
+                # Try to extract specific sections
+                try:
+                    if soup.select_one('.rating-10 .rating'):
+                        processed_review['rating'] = soup.select_one('.rating-10 .rating').text.strip()
+                    
+                    if soup.select_one('.text_content'):
+                        processed_review['review_text'] = soup.select_one('.text_content').text.strip()
+                    
+                    if soup.select_one('.review-meta'):
+                        processed_review['metadata'] = soup.select_one('.review-meta').text.strip()
+                    
+                    if soup.select_one('.cabin-flown'):
+                        processed_review['cabin'] = soup.select_one('.cabin-flown').text.strip()
+                    
+                    if soup.select_one('.aircraft'):
+                        processed_review['aircraft'] = soup.select_one('.aircraft').text.strip()
+                    
+                    if soup.select_one('.route'):
+                        processed_review['route'] = soup.select_one('.route').text.strip()
+                    
+                    if soup.select_one('.recommend-yes, .recommend-no'):
+                        processed_review['recommendation'] = soup.select_one('.recommend-yes, .recommend-no').text.strip()
+                except:
+                    pass
+                
+                processed_reviews.append(processed_review)
+        
+        return processed_reviews
+    except Exception as e:
+        st.warning(f"FireCrawl API error: {str(e)}")
+        return []
 
-    def scrape_with_bs(self, url: str) -> List[Dict]:
-        """Fallback scraping dengan BeautifulSoup"""
-        try:
-            response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
-            response.raise_for_status()
+# Function to scrape data using BeautifulSoup
+def scrape_with_beautifulsoup(url):
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Extract all review items
+        review_items = soup.select('.review-list .item')
+        
+        # Determine review type based on URL
+        review_type = "unknown"
+        if 'airline-reviews' in url:
+            review_type = 'airline'
+        elif 'seat-reviews' in url:
+            review_type = 'seat'
+        elif 'lounge-reviews' in url:
+            review_type = 'lounge'
+        
+        # Extract all data from each review
+        all_reviews = []
+        for item in review_items:
+            # Create a dictionary for all content
+            review_data = {'type': review_type}
             
-            soup = BeautifulSoup(response.text, 'html.parser')
-            return [
-                self._process_html(str(item), self._get_review_type(url))
-                for item in soup.select('.review-list .item')
-            ]
-        except Exception as e:
-            st.error(f"Scraping error: {str(e)}")
-            return []
+            # Extract all text
+            review_text = item.get_text(separator=' ', strip=True)
+            
+            # Add the extracted data to the review dictionary
+            review_data['full_text'] = review_text
+            
+            # Try to extract specific sections for better organization
+            try:
+                if item.select_one('.rating-10 .rating'):
+                    review_data['rating'] = item.select_one('.rating-10 .rating').text.strip()
+                
+                if item.select_one('.text_content'):
+                    review_data['review_text'] = item.select_one('.text_content').text.strip()
+                
+                if item.select_one('.review-meta'):
+                    review_data['metadata'] = item.select_one('.review-meta').text.strip()
+                
+                if item.select_one('.cabin-flown'):
+                    review_data['cabin'] = item.select_one('.cabin-flown').text.strip()
+                
+                if item.select_one('.aircraft'):
+                    review_data['aircraft'] = item.select_one('.aircraft').text.strip()
+                
+                if item.select_one('.route'):
+                    review_data['route'] = item.select_one('.route').text.strip()
+                
+                if item.select_one('.recommend-yes, .recommend-no'):
+                    review_data['recommendation'] = item.select_one('.recommend-yes, .recommend-no').text.strip()
+            except:
+                # If any extraction fails, we still have the full text
+                pass
+            
+            all_reviews.append(review_data)
+        
+        return all_reviews
+    except Exception as e:
+        st.error(f"Error scraping {url}: {str(e)}")
+        return []
 
-    def _get_review_type(self, url: str) -> str:
-        """Mendeteksi tipe review dari URL"""
-        if 'seat-reviews' in url: return 'seat'
-        if 'lounge-reviews' in url: return 'lounge'
-        return 'airline'
-
-class RAGSystem:
-    """Mengelola sistem RAG"""
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-        self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=Config.CHUNK_SIZE,
-            chunk_overlap=Config.CHUNK_OVERLAP
-        )
-        
-    def initialize(self, scraped_data: List[Dict]) -> FAISS:
-        """Inisialisasi sistem vektor"""
-        documents = [
-            "\n".join(f"{k}: {v}" for k, v in review.items() if v)
-            for review in scraped_data
-        ]
-        
-        chunks = self.text_splitter.create_documents(documents)
-        embeddings = GoogleGenerativeAIEmbeddings(
-            model=Config.EMBEDDING_MODEL,
-            google_api_key=self.api_key
-        )
-        
-        return FAISS.from_documents(chunks, embeddings)
-
-class ChatInterface:
-    """Mengelola antarmuka chat"""
-    def __init__(self, vector_store: FAISS):
-        self.vector_store = vector_store
-        self.retriever = vector_store.as_retriever(search_kwargs=Config.SEARCH_KWARGS)
-        
-        self.prompt_template = PromptTemplate.from_template("""
-            Anda adalah analis data profesional untuk ulasan British Airways. 
-            Jawab pertanyaan berikut berdasarkan konteks:
-            
-            Konteks: {context}
-            
-            Pertanyaan: {question}
-            
-            Jawaban:
-        """)
-        
-        self.model = ChatGoogleGenerativeAI(
-            model=Config.GEMINI_MODEL,
-            google_api_key=st.session_state.gemini_api_key,
-            temperature=0.2
-        )
+# Merged function to choose scraping method
+def scrape_website(url):
+    if firecrawl_api_key:
+        reviews = scrape_with_firecrawl(url)
+        if reviews:
+            return reviews
+        # Fall back to BeautifulSoup if FireCrawl fails or returns no results
     
-    def generate_response(self, question: str) -> str:
-        """Generate jawaban RAG-based"""
-        context = "\n\n".join([
-            doc.page_content 
-            for doc in self.retriever.get_relevant_documents(question)
-        ])
-        
-        return self.model.invoke(
-            self.prompt_template.format(context=context, question=question)
-        ).content
+    return scrape_with_beautifulsoup(url)
 
-# UI Components
-def setup_sidebar():
-    """Menyiapkan sidebar aplikasi"""
-    with st.sidebar:
-        st.title("Pengaturan API")
-        st.session_state.gemini_api_key = st.text_input(
-            "Gemini API Key",
-            value=st.session_state.gemini_api_key,
-            type="password"
-        )
-        
-        st.session_state.firecrawl_api_key = st.text_input(
-            "FireCrawl API Key",
-            value=st.session_state.firecrawl_api_key,
-            type="password"
-        )
-        
-        if st.button("Simpan API Keys"):
-            st.session_state.initialized = False
-            st.rerun()
-        
-        st.markdown("---")
-        st.title("Tentang Aplikasi")
-        st.write("Aplikasi ini menganalisis ulasan pelanggan British Airways menggunakan teknologi AI Gemini.")
-
-def display_stats():
-    """Menampilkan statistik data"""
-    col1, col2, col3 = st.columns(3)
-    counts = {
-        'airline': sum(1 for r in st.session_state.scraped_content if r['type'] == 'airline'),
-        'seat': sum(1 for r in st.session_state.scraped_content if r['type'] == 'seat'),
-        'lounge': sum(1 for r in st.session_state.scraped_content if r['type'] == 'lounge')
-    }
+# Initialize RAG components
+def initialize_rag(scraped_content):
+    # Convert scraped content to text documents
+    documents = []
     
-    with col1: st.metric("Ulasan Maskapai", counts['airline'])
-    with col2: st.metric("Ulasan Kursi", counts['seat'])
-    with col3: st.metric("Ulasan Lounge", counts['lounge'])
-
-# Main App Flow
-def main():
-    """Alur utama aplikasi"""
-    api_manager = APIManager()
-    setup_sidebar()
+    for review in scraped_content:
+        # Create a single document from all available fields
+        doc_text = ""
+        
+        # Add all fields available in the review
+        for key, value in review.items():
+            if value and isinstance(value, str):
+                doc_text += f"{key}: {value}\n"
+        
+        documents.append(doc_text)
     
-    if not st.session_state.gemini_api_key:
-        st.error("Harap masukkan Gemini API Key di sidebar")
-        return
-
-    st.title("Analisis Ulasan British Airways")
+    # Split text into chunks
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=200,
+        length_function=len,
+    )
+    chunks = text_splitter.create_documents(documents)
     
-    if not st.session_state.initialized:
-        initialize_application(api_manager)
-    else:
-        run_application()
-
-def initialize_application(api_manager: APIManager):
-    """Inisialisasi awal aplikasi"""
-    st.write("Aplikasi ini membutuhkan inisialisasi awal...")
+    # Create embeddings
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model="models/embedding-001",
+        google_api_key=api_key
+    )
     
-    if st.button("Mulai Analisis"):
-        with st.status("Memproses data..."):
-            urls = [
-                "https://www.airlinequality.com/airline-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000",
-                "https://www.airlinequality.com/seat-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000",
-                "https://www.airlinequality.com/lounge-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000"
-            ]
+    # Create vector store
+    vector_store = FAISS.from_documents(chunks, embeddings)
+    
+    return vector_store
+
+# Main app
+st.title("British Airways Reviews Analysis")
+st.write("This app analyzes customer reviews from British Airways using RAG and Google Gemini AI.")
+
+# URLs to scrape
+urls = [
+    "https://www.airlinequality.com/airline-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000",
+    "https://www.airlinequality.com/seat-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000",
+    "https://www.airlinequality.com/lounge-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000"
+]
+
+# Initialize session state
+if "initialized" not in st.session_state:
+    st.session_state.initialized = False
+    st.session_state.scraped_content = []
+    st.session_state.vector_store = None
+    st.session_state.chat_history = []
+
+# Add a button to choose between scraping modes
+if not st.session_state.initialized:
+    scraping_choice = st.radio(
+        "Select scraping method:",
+        ["Combined (FireCrawl + fallback to BeautifulSoup)", "Separated (Scraper Agent + Chat Agent)"]
+    )
+    
+    if st.button("Start Analysis"):
+        with st.spinner("Scraping data and initializing RAG. This may take a minute..."):
+            # Scrape content from all URLs
+            all_reviews = []
             
-            scraper = DataScraper(api_manager)
-            scraped_data = []
-            
-            for url in urls:
-                data = scraper.scrape_with_firecrawl(url) or scraper.scrape_with_bs(url)
-                scraped_data.extend(data)
-                time.sleep(Config.SCRAPE_DELAY)
-            
-            if scraped_data:
-                st.session_state.scraped_content = scraped_data
-                st.session_state.vector_store = RAGSystem(
-                    st.session_state.gemini_api_key
-                ).initialize(scraped_data)
-                st.session_state.initialized = True
-                st.rerun()
+            if scraping_choice == "Combined (FireCrawl + fallback to BeautifulSoup)":
+                # Use the combined approach
+                for url in urls:
+                    reviews = scrape_website(url)
+                    all_reviews.extend(reviews)
+                    # Add a small delay to avoid overwhelming the server
+                    time.sleep(1)
             else:
-                st.error("Gagal mendapatkan data. Silakan coba lagi.")
+                # Implement the separated agent approach
+                st.info("Using separated agent approach for scraping")
+                
+                # First agent: Scraper
+                with st.status("Scraper Agent: Collecting reviews..."):
+                    for url in urls:
+                        # Choose the best available scraping method
+                        if firecrawl_api_key:
+                            reviews = scrape_with_firecrawl(url)
+                            if not reviews:
+                                reviews = scrape_with_beautifulsoup(url)
+                        else:
+                            reviews = scrape_with_beautifulsoup(url)
+                            
+                        all_reviews.extend(reviews)
+                        # Add a small delay to avoid overwhelming the server
+                        time.sleep(1)
+                        
+                        st.write(f"Collected {len(reviews)} reviews from {url}")
+            
+            st.session_state.scraped_content = all_reviews
+            
+            # Initialize RAG
+            if all_reviews:
+                # Second agent: RAG builder
+                with st.status("Chat Agent: Building knowledge base..."):
+                    st.session_state.vector_store = initialize_rag(all_reviews)
+                    st.session_state.initialized = True
+                
+                st.success(f"Successfully scraped {len(all_reviews)} reviews and initialized RAG.")
+                
+                # Display which method was used
+                if firecrawl_api_key and any(review for review in all_reviews if scrape_with_firecrawl(urls[0])):
+                    st.info("Used FireCrawl API for scraping.")
+                else:
+                    st.info("Used BeautifulSoup for scraping.")
+                
+                st.rerun()  # Updated from experimental_rerun to rerun
+            else:
+                st.error("Failed to scrape any reviews. Please check your internet connection and try again.")
 
-def run_application():
-    """Menjalankan aplikasi utama"""
-    display_stats()
+# Display basic stats
+if st.session_state.initialized:
+    # Count reviews by type
+    airline_reviews = sum(1 for r in st.session_state.scraped_content if r.get('type') == 'airline')
+    seat_reviews = sum(1 for r in st.session_state.scraped_content if r.get('type') == 'seat')
+    lounge_reviews = sum(1 for r in st.session_state.scraped_content if r.get('type') == 'lounge')
     
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Airline Reviews", airline_reviews)
+    with col2:
+        st.metric("Seat Reviews", seat_reviews)
+    with col3:
+        st.metric("Lounge Reviews", lounge_reviews)
+    
+    # Display discovered fields
     if st.session_state.scraped_content:
-        with st.expander("Kolom Data yang Terdeteksi"):
-            fields = set().union(*st.session_state.scraped_content)
-            st.write(", ".join(sorted(fields)))
+        with st.expander("Discovered Fields"):
+            # Get all unique keys from the scraped content
+            all_keys = set()
+            for review in st.session_state.scraped_content:
+                all_keys.update(review.keys())
+            
+            # Display them
+            st.write(", ".join(sorted(all_keys)))
 
-    st.header("Tanya Tentang Ulasan")
-    if prompt := st.chat_input("Apa yang ingin Anda ketahui?"):
-        handle_chat_input(prompt)
+# Create the chat interface
+st.header("Ask about British Airways Reviews")
+st.write("Ask questions about British Airways reviews, seats, or lounges.")
 
-def handle_chat_input(prompt: str):
-    """Menangani input chat pengguna"""
-    st.session_state.chat_history.append({"role": "user", "content": prompt})
-    
-    with st.spinner("Menganalisis..."):
-        chat_interface = ChatInterface(st.session_state.vector_store)
-        response = chat_interface.generate_response(prompt)
-        st.session_state.chat_history.append({"role": "assistant", "content": response})
-    
-    display_chat_history()
+# User input form
+with st.form("input_form", clear_on_submit=True):
+    user_input = st.text_input("What would you like to know?", 
+                               placeholder="Example: What are the most common complaints about British Airways?")
+    submit_button = st.form_submit_button("Submit")
 
-def display_chat_history():
-    """Menampilkan riwayat percakapan"""
-    for msg in st.session_state.chat_history:
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
+# Process the form submission
+if submit_button and user_input and st.session_state.initialized:
+    with st.spinner("Analyzing reviews..."):
+        # Add user query to chat history
+        st.session_state.chat_history.append({"role": "user", "content": user_input})
+        
+        # RAG query
+        if st.session_state.vector_store:
+            # Get relevant documents
+            retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 5})
+            relevant_docs = retriever.get_relevant_documents(user_input)
+            
+            # Extract context from relevant documents
+            context = "\n\n".join([doc.page_content for doc in relevant_docs])
+            
+            # Create prompt template
+            prompt_template = """
+            You are a detailed and professional data analyst specializing in British Airways reviews.
+            
+            Answer the following question based solely on the context provided.
+            If the context doesn't contain enough information to answer the question, say so.
+            
+            Context:
+            {context}
+            
+            Question: {question}
+            
+            Answer:
+            """
+            
+            # Set up the model
+            model = ChatGoogleGenerativeAI(
+                model="gemini-2.0-flash-lite",
+                google_api_key=api_key,
+                temperature=0.2,
+                top_p=0.95,
+                top_k=40,
+                max_output_tokens=8192,
+            )
+            
+            # Create and execute the chain
+            prompt = PromptTemplate(
+                template=prompt_template,
+                input_variables=["context", "question"]
+            )
+            
+            # Generate response
+            response = model.invoke(
+                prompt.format(
+                    context=context,
+                    question=user_input
+                )
+            )
+            
+            # Add AI response to chat history
+            st.session_state.chat_history.append({"role": "assistant", "content": response.content})
 
-if __name__ == "__main__":
-    main()
+# Display the conversation history
+st.header("Conversation History")
+for message in st.session_state.chat_history:
+    if message["role"] == "user":
+        st.markdown(f"**You:** {message['content']}")
+    else:
+        st.markdown(f"**AI:** {message['content']}")
