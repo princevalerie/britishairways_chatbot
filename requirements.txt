@@ -1,7 +1,7 @@
-streamlit>=1.0
+streamlit>=1.0.0
 google-generativeai>=0.1.0
-requests>=2.25.0
+requests>=2.25.1
 beautifulsoup4>=4.9.3
-python-dotenv>=0.15.0
-scikit-learn>=0.24.2
+sentence-transformers>=2.2.0
+faiss-cpu>=1.7.1
 numpy>=1.19.5
