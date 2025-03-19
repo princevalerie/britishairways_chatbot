@@ -1,9 +1,7 @@
-streamlit==1.32.0
-python-dotenv==1.0.0
-langchain==0.1.16
-langchain-community==0.0.32
-langchain-google-genai==0.1.2
-google-generativeai==0.3.3
-chromadb==0.4.24
-numpy==1.26.4
-firecrawl 
+streamlit>=1.24
+firecrawl
+python-dotenv
+langchain
+langchain-google-genai
+langchain-community
+numpy
