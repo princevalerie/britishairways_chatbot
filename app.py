@@ -1,8 +1,8 @@
-# app.py
 import os
 import time
 from typing import List, Dict
 
+import numpy as np
 import streamlit as st
 from firecrawl import FirecrawlApp
 from dotenv import load_dotenv
@@ -85,8 +85,10 @@ class FireCrawlManager:
         }
 
     def _get_review_type(self, url: str) -> str:
-        if 'seat-reviews' in url: return 'seat'
-        if 'lounge-reviews' in url: return 'lounge'
+        if 'seat-reviews' in url: 
+            return 'seat'
+        if 'lounge-reviews' in url: 
+            return 'lounge'
         return 'airline'
 
 class RAGSystem:
@@ -131,17 +133,17 @@ class AnalystAssistant:
         ])
         
         prompt = f"""Anda adalah analis profesional British Airways dengan akses ke data review terkini.
-        Pertanyaan: {question}
-        
-        Konteks Review:
-        {context}
-        
-        Format Jawaban:
-        1. Identifikasi pola utama
-        2. Sertakan statistik kuantitatif
-        3. Berikan contoh spesifik dari review
-        4. Rekomendasi perbaikan
-        """
+Pertanyaan: {question}
+
+Konteks Review:
+{context}
+
+Format Jawaban:
+1. Identifikasi pola utama
+2. Sertakan statistik kuantitatif
+3. Berikan contoh spesifik dari review
+4. Rekomendasi perbaikan
+"""
         
         return self.llm.invoke(prompt).content
 
@@ -151,27 +153,33 @@ def setup_sidebar():
         st.title("⚙️ Konfigurasi")
         st.write("Pastikan API key sudah diisi di file .env")
         st.markdown("""
-            **Key Requirements:**
-            - [FireCrawl API Key](https://firecrawl.dev)
-            - [Gemini API Key](https://ai.google.dev)
-            """)
+**Key Requirements:**
+- [FireCrawl API Key](https://firecrawl.dev)
+- [Gemini API Key](https://ai.google.dev)
+""")
         
         if st.button("🔄 Muat Ulang Data"):
             st.session_state.clear()
-            st.rerun()
+            st.experimental_rerun()
 
 def display_analytics(reviews: List[Dict]):
     st.subheader("📊 Analisis Data")
     
     col1, col2 = st.columns(2)
     with col1:
-        ratings = [int(r['rating'].split('/')[0]) for r in reviews if r['rating'].isdigit()]
+        # Ekstrak rating angka dari format "X/10"
+        ratings = []
+        for r in reviews:
+            rating_str = r['rating'].split('/')[0]
+            if rating_str.isdigit():
+                ratings.append(int(rating_str))
         if ratings:
             st.metric("Rata-rata Rating", f"{sum(ratings)/len(ratings):.1f}/10")
     
     with col2:
         review_types = [r['type'] for r in reviews]
-        st.write("Distribusi Jenis Review:", dict(zip(*np.unique(review_types, return_counts=True))))
+        unique_types, counts = np.unique(review_types, return_counts=True)
+        st.write("Distribusi Jenis Review:", dict(zip(unique_types, counts)))
 
 # Main App
 def main():
@@ -182,20 +190,19 @@ def main():
         st.session_state.reviews = []
     
     if not st.session_state.reviews:
-        with st.status("🕷️ Crawling data review...", expanded=True) as status:
+        with st.spinner("🕷️ Crawling data review..."):
             crawler = FireCrawlManager()
             urls = [
-                "https://www.airlinequality.com/airline-reviews/british-airways",
-                "https://www.airlinequality.com/seat-reviews/british-airways",
-                "https://www.airlinequality.com/lounge-reviews/british-airways"
+                "https://www.airlinequality.com/airline-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000",
+                "https://www.airlinequality.com/seat-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000",
+                "https://www.airlinequality.com/lounge-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000"
             ]
             
             for url in urls:
                 st.write(f"Memproses: {url}")
                 st.session_state.reviews.extend(crawler.crawl_reviews(url))
                 time.sleep(2)
-            
-            status.update(label="✅ Crawling selesai", state="complete")
+            st.success("✅ Crawling selesai")
     
     if st.session_state.reviews:
         display_analytics(st.session_state.reviews)
