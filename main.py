@@ -236,7 +236,7 @@ if user_input:
             placeholder = st.empty()
             answer = ""
             # Mengirim pesan dengan streaming output (asumsi stream=True mengembalikan generator)
-            for token in chat_session.send_message(user_input, stream=True):
+            for token in chat_session.send_message(user_input, streaming=True):
                 answer += token.text  # Gabungkan token yang diterima
                 placeholder.markdown(answer)  # Perbarui tampilan output secara progresif
             
