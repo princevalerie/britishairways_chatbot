@@ -24,7 +24,7 @@ generation_config = {
 }
 
 model = genai.GenerativeModel(
-    model_name="gemini-2.0-flash-lite",
+    model_name="gemini-2.0-flash",
     generation_config=generation_config
 )
 
@@ -61,23 +61,16 @@ urls = [
     "https://www.airlinequality.com/lounge-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000"
 ]
 
-# Tampilkan informasi scraping di sidebar
-st.sidebar.write("Scraping URL:")
-for url in urls:
-    st.sidebar.write(f"Scraping: {url}")
 
 # Scraping data dan memproses chunk
 all_chunks = []
 st.info("Sedang melakukan scraping dan memproses data, mohon tunggu...")
 for url in urls:
-    st.sidebar.write(f"Scraping: {url}")  # Menampilkan juga di sidebar
+    # st.sidebar.write(f"Scraping: {url}")  # Menampilkan juga di sidebar
     full_text = scrape_text(url)
     if full_text:
         chunks = chunk_text(full_text, chunk_size=1000)
         all_chunks.extend(chunks)
-
-# Menampilkan total chunk yang dihasilkan (dalam kasus ini 5475)
-st.sidebar.write("Total chunk yang dihasilkan: 5475")
 
 # UI Chatbot
 st.title("Customer Review Analysis Chatbot with RAG")
