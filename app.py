@@ -7,10 +7,9 @@ import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import FAISS
+from langchain_community.vectorstores import Chroma
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 
 # Konfigurasi awal
@@ -171,8 +170,8 @@ class RAGSystem:
             chunk_overlap=Config.CHUNK_OVERLAP
         )
         
-    def initialize(self, scraped_data: List[Dict]) -> FAISS:
-        """Inisialisasi sistem vektor"""
+    def initialize(self, scraped_data: List[Dict]) -> Chroma:
+        """Inisialisasi sistem vektor dengan ChromaDB"""
         documents = [
             "\n".join(f"{k}: {v}" for k, v in review.items() if v)
             for review in scraped_data
@@ -184,11 +183,12 @@ class RAGSystem:
             google_api_key=self.api_key
         )
         
-        return FAISS.from_documents(chunks, embeddings)
+        # Using Chroma instead of FAISS
+        return Chroma.from_documents(chunks, embeddings)
 
 class ChatInterface:
     """Mengelola antarmuka chat"""
-    def __init__(self, vector_store: FAISS):
+    def __init__(self, vector_store: Chroma):
         self.vector_store = vector_store
         self.retriever = vector_store.as_retriever(search_kwargs=Config.SEARCH_KWARGS)
         
