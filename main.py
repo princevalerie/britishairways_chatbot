@@ -25,7 +25,7 @@ generation_config = {
 }
 
 model = genai.GenerativeModel(
-    model_name="gemini-2.0-flash",
+    model_name="gemini-2.0-flash-lite",
     generation_config=generation_config
 )
 
@@ -83,6 +83,10 @@ index.add(chunk_embeddings)
 st.title("Customer Review Analysis Chatbot with RAG (Embedding + FAISS)")
 
 if "messages" not in st.session_state:
+    st.session_state["messages"] = [{"role": "assistant", "content": "Halo, ada yang bisa saya bantu?"}]
+
+# Add a button to clear messages
+if st.button("Clear Messages"):
     st.session_state["messages"] = [{"role": "assistant", "content": "Halo, ada yang bisa saya bantu?"}]
 
 # Tampilkan history chat
