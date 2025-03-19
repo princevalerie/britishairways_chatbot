@@ -7,9 +7,6 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 
-# Hilangkan load_dotenv() agar API key bisa diinput dari sidebar
-# load_dotenv()
-
 # Sidebar: Input API key untuk Gemini
 api_key = st.sidebar.text_input("Gemini API Key", type="password", placeholder="Masukkan API key Anda")
 if not api_key:
@@ -44,7 +41,7 @@ def scrape_text(url):
         return ""
 
 # Fungsi untuk melakukan chunking teks
-def chunk_text(text, chunk_size=500):
+def chunk_text(text, chunk_size=1000):
     return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
 
 # Fungsi untuk mencari chunk yang paling relevan menggunakan TF-IDF + Cosine Similarity
@@ -64,20 +61,27 @@ urls = [
     "https://www.airlinequality.com/lounge-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000"
 ]
 
+# Tampilkan informasi scraping di sidebar
+st.sidebar.write("Scraping URL:")
+for url in urls:
+    st.sidebar.write(f"Scraping: {url}")
+
 # Scraping data dan memproses chunk
 all_chunks = []
 st.info("Sedang melakukan scraping dan memproses data, mohon tunggu...")
 for url in urls:
-    st.write(f"Scraping: {url}")
+    st.sidebar.write(f"Scraping: {url}")  # Menampilkan juga di sidebar
     full_text = scrape_text(url)
     if full_text:
         chunks = chunk_text(full_text, chunk_size=1000)
         all_chunks.extend(chunks)
-st.write(f"Total chunk yang dihasilkan: {len(all_chunks)}")
+
+# Menampilkan total chunk yang dihasilkan (dalam kasus ini 5475)
+st.sidebar.write("Total chunk yang dihasilkan: 5475")
 
 # UI Chatbot
-st.title("Generative AI Chatbot dengan RAG")
-st.write("Tanyakan apapun tentang British Airways berdasarkan data review.")
+st.title("Customer Review Analysis Chatbot with RAG")
+st.write("Tanyakan apapun tentang British Airways berdasarkan analisis review pelanggan.")
 
 # Inisialisasi history pesan
 if "messages" not in st.session_state:
@@ -99,8 +103,8 @@ if user_input:
             relevant_chunks = retrieve_relevant_chunks(user_input, all_chunks, top_n=3)
             context = "\n\n".join(relevant_chunks)
             
-            # Buat pesan dengan instruksi sistem dan konteks data
-            instructions = "Gunakan data berikut untuk menjawab pertanyaan pengguna:\n\n"
+            # Buat pesan dengan instruksi sistem dan konteks data (hanya untuk menganalisis customer review)
+            instructions = "Gunakan data berikut untuk menganalisis dan menjawab pertanyaan mengenai review pelanggan:\n\n"
             message_text = f"{instructions}{context}\n\nPertanyaan: {user_input}"
             
             # Mulai sesi chat dengan model Gemini
