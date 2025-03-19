@@ -150,7 +150,7 @@ Format Jawaban:
 # Fungsi untuk reload aplikasi
 def reload_app():
     st.session_state.clear()
-    st.experimental_rerun()
+    st.rerun()  # Changed from st.experimental_rerun() to st.rerun()
 
 # Komponen UI
 def setup_sidebar():
