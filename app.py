@@ -43,7 +43,7 @@ def scrape_text(url):
         return ""
 
 # Fungsi untuk melakukan chunking teks
-def chunk_text(text, chunk_size=1000):
+def chunk_text(text, chunk_size=500):
     return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
 
 # Fungsi untuk mencari chunk yang paling relevan menggunakan TF-IDF + Cosine Similarity
@@ -87,10 +87,12 @@ if submit_button and user_input:
         relevant_chunks = retrieve_relevant_chunks(user_input, all_chunks, top_n=3)
         context = "\n\n".join(relevant_chunks)
         
+        # Gabungkan instruksi sistem ke dalam pesan pengguna
+        instructions = "Gunakan data berikut untuk menjawab pertanyaan pengguna:\n\n"
         messages = [
-            {"role": "system", "parts": [{"text": "Gunakan data berikut untuk menjawab pertanyaan pengguna:"}]},
-            {"role": "user", "parts": [{"text": f"{context}\n\nPertanyaan: {user_input}"}]}
+            {"role": "user", "parts": [{"text": f"{instructions}{context}\n\nPertanyaan: {user_input}"}]}
         ]
+
         
         chat_session = model.start_chat(history=messages)
         response = chat_session.send_message(user_input)
