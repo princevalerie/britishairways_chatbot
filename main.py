@@ -155,6 +155,8 @@ if "api_keys_initialized" not in st.session_state:
     st.session_state.env_gemini_api_key = os.getenv("GEMINI_API_KEY", "")
     st.session_state.api_keys_initialized = True
 
+st.session_state.gemini_api_key = st.session_state.env_gemini_api_key
+
 # Sidebar: Input API key for Gemini
 api_key = st.sidebar.text_input("Gemini API Key", type="password", placeholder="Masukkan API key Anda", value=st.session_state.env_gemini_api_key)
 
