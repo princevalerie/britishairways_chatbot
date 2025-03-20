@@ -38,6 +38,9 @@ def scrape_text(url):
 def chunk_text(text, chunk_size=1000):
     return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
 
+# Inisialisasi model embedding (SentenceTransformer)
+embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+
 # Daftar URL yang akan di-scrape
 urls = [
     "https://www.airlinequality.com/airline-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000",
@@ -71,7 +74,6 @@ index.add(chunk_embeddings)
 # Setelah proses selesai, lanjutkan dengan komponen UI lainnya
 st.sidebar.success("Proses scraping dan pemrosesan data selesai.")
 
-
 # Periksa apakah api_key dan chunk_embeddings sudah siap
 if api_key and chunk_embeddings is not None:
     # Konfigurasi model Gemini
@@ -87,20 +89,15 @@ if api_key and chunk_embeddings is not None:
         model_name="gemini-2.0-flash-lite",
         generation_config=generation_config
     )
-
     st.title("Customer Review Analysis Chatbot with RAG ")
-
     if "messages" not in st.session_state:
         st.session_state["messages"] = [{"role": "assistant", "content": "Halo, ada yang bisa saya bantu?"}]
-
     # Tombol untuk menghapus history chat
     if st.sidebar.button("Clear Messages"):
         st.session_state["messages"] = [{"role": "assistant", "content": "Halo, ada yang bisa saya bantu?"}]
-
     # Tampilkan history chat
     for msg in st.session_state["messages"]:
         st.chat_message(msg["role"]).write(msg["content"])
-
     # Input chat menggunakan st.chat_input
     user_input = st.chat_input("Tulis pertanyaan Anda di sini...")
     if user_input:
@@ -113,7 +110,7 @@ if api_key and chunk_embeddings is not None:
                 query_embedding = embedding_model.encode([user_input], convert_to_numpy=True)
                 faiss.normalize_L2(query_embedding)
                 
-                # Lakukan pencarian FAISS untuk menemukan top chunks yang relevan
+                # Lakukan pencarian FAISS untuk menemukan top 3 chunk yang relevan
                 k = 100
                 distances, indices = index.search(query_embedding, k)
                 relevant_chunks = [all_chunks[i] for i in indices[0]]
@@ -132,9 +129,4 @@ if api_key and chunk_embeddings is not None:
                     st.markdown(response.text)
                     st.session_state["messages"].append({"role": "assistant", "content": response.text})
 else:
-    if not api_key:
-        st.sidebar.warning("Mohon masukkan API key untuk mengakses fitur chat.")
-    elif chunk_embeddings is None:
-        st.sidebar.warning("Embeddings belum siap. Harap tunggu proses pemrosesan data selesai.")
-    else:
-        st.sidebar.warning("Mohon masukkan API key dan pastikan embeddings siap untuk mengakses fitur chat.")
+    st.sidebar.warning("Mohon masukkan API key dan pastikan embeddings siap untuk mengakses fitur chat.")
