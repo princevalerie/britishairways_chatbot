@@ -111,7 +111,7 @@ if api_key and chunk_embeddings is not None:
                 faiss.normalize_L2(query_embedding)
                 
                 # Lakukan pencarian FAISS untuk menemukan top 3 chunk yang relevan
-                k = 500
+                k = 200
                 distances, indices = index.search(query_embedding, k)
                 relevant_chunks = [all_chunks[i] for i in indices[0]]
                 context = "\n\n".join(relevant_chunks)
