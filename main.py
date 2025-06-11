@@ -42,12 +42,12 @@ def chunk_text(text, chunk_size=1000):
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 
 # Daftar URL yang akan di-scrape
-urls = [
-    "https://www.airlinequality.com/airline-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000",
-    "https://www.airlinequality.com/seat-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000",
-    "https://www.airlinequality.com/lounge-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000"
-]
-
+# urls = [
+#     "https://www.airlinequality.com/airline-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000",
+#     "https://www.airlinequality.com/seat-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000",
+#     "https://www.airlinequality.com/lounge-reviews/british-airways/?sortby=post_date%3ADesc&pagesize=200000"
+# ]
+urls = ["https://www.sec.gov/Archives/edgar/data/1534155/000121390024035114/ea020429201ex99-61_ameri.htm"]
 # Scraping data dan memproses chunk
 all_chunks = []
 with st.spinner("Sedang melakukan scraping dan memproses data, mohon tunggu..."):
